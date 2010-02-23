@@ -1,0 +1,15 @@
+[Main]
+
+[Backup]
+# trailing / is required
+full_path = /path/to/full/backups/
+# if inc_path is not set the application will use the full path by default
+inc_path = /path/to/incremental/backups/
+file_prefix = dbname_
+username = user
+password = t3ster
+database = dbname
+
+
+[Logging]
+log_path = /path/to/log/file.log
