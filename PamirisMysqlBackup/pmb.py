@@ -1,26 +1,49 @@
 #!/usr/bin/python
 
+# Author: Kyle Terry (Pamiric Inc)
+
 import os, sys, time, commands
-import getopt
+import getopt, ConfigParser
+import logging
+import logging.config
 
 def main():
         """main method for parsing the command line options and what happens after that"""
 
-        global options, args
+        # options, args and config all need to be global so they can be used in other methods
+        global options, args, config, logger
+
+        # open the config file and parse it
+        config = ConfigParser.RawConfigParser()
+        config.read('config.cfg')
+
+        # configure the logger
+        logger = logging.getLogger("PMB LOG")
+        logger.setLevel(logging.DEBUG)
+        fileHandler = logging.FileHandler(config.get('Logging', 'log_path'))
+        formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        fileHandler.setFormatter(formatter)
+        logger.addHandler(fileHandler)
+        logger.info('testing')
+
 
         # list of available options
         available = ['backup', 'restore', 'fetch']
 
+        # attemped to parse the command line arguments. getopt will detect and throw an exception if an argument
+        # exists that wasn't meant to be there.
         try:
                 options, args = getopt.gnu_getopt(sys.argv[1:], 'fi', ['full', 'incremental', 'time='])
         except getopt.GetoptError, err:
                 print str(err)
                 sys.exit(2)
 
+        # we do this because we only want either backup, restore, or fetch to be passed in. aka one at a time
         if len(args) > 1:
                 print 'FATAL: Cannot pass in more than one action (argument)'
                 sys.exit(2)
 
+        # detect which action is needed and call it's method
         if 'backup' == args[0]:
                 backup()
         elif 'restore' == args[0]:
