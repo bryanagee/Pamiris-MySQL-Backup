@@ -5,11 +5,16 @@
 full_path = /path/to/full/backups/
 # if inc_path is not set the application will use the full path by default
 inc_path = /path/to/incremental/backups/
+bin_log_path = /var/log/mysql/
+bin_log_name = mysql-bin
 file_prefix = dbname_
 username = user
 password = t3ster
 database = dbname
 
+[Encryption]
+# uncomment the line below to enable backup encryption
+enabled = true
 
 [Logging]
 log_path = /path/to/log/file.log
