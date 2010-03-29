@@ -23,7 +23,8 @@ def main():
 
     # open the config file and parse it
     config = ConfigParser.RawConfigParser()
-    config.read('config.cfg')
+    config_file = '%s/config.cfg' % (os.path.abspath(os.path.dirname(__file__)))
+    config.read(config_file)
 
     # configure the logger
     logger = logging.getLogger("PMB LOG")
@@ -144,8 +145,9 @@ def _backup_full():
     # available before we flush them with --flush-logs.
     # this will let us easily grab the bin-logs created after a full backup
     # to be used with incremental backups.
-    ls_command = "ls -l %s |grep %s.0 | awk '{print $8}' > bin_logs" % (config.get('Backup', 'bin_log_path'),
-        config.get('Backup', 'bin_log_name'))
+    ls_command = "ls -l --time-style=long-iso %s |grep %s.0 | awk '{print $8}' > bin_logs" \
+            % (config.get('Backup', 'bin_log_path'),
+               config.get('Backup', 'bin_log_name'))
     os.system(ls_command)
     last_line = file('bin_logs', "r").readlines()[-1]
     os.system('rm -f bin_log_info')
@@ -170,11 +172,13 @@ def _backup_full():
         logAndPrint('Encryption enabled...', 'info')
         logAndPrint('Encrypting and compressing backup...', 'info')
 
-        encryption_command = 'gpg -r %s --output %s.gpg --encrypt %s.sql' % (config.get('Encryption', 'key_name'), file_name, file_name)
+        encryption_command = 'gpg --always-trust -r %s --output %s.gpg --encrypt %s.sql' \
+                % (config.get('Encryption', 'key_name'), file_name, file_name)
         logAndPrint('running: %s' % encryption_command, 'info')
         os.system(encryption_command)
-        logAndPrint('removing unencrypted sql file...(%s.sql)' % (file_name), 'info')
-        os.system('rm %s.sql' % file_name)
+        logAndPrint('removing unencrypted sql file...(%s.sql)' \
+                % (file_name), 'info')
+        os.system('rm -rf %s.sql' % file_name)
 
     else:
         logAndPrint('Compressing backup...', 'info')
@@ -219,8 +223,8 @@ def _backup_incremental():
         logAndPrint(message, 'error', True, True)
 
     # relist binary logs
-    os.system('rm bin_logs')
-    ls_command = "ls -l %s |grep %s.0 | awk '{print $8}' > bin_logs" % (config.get('Backup', 'bin_log_path'),
+    os.system('rm -rf bin_logs')
+    ls_command = "ls -l --time-style=long-iso %s |grep %s.0 | awk '{print $8}' > bin_logs" % (config.get('Backup', 'bin_log_path'),
         config.get('Backup', 'bin_log_name'))
     os.system(ls_command)
     last_line = file('bin_logs', "r").readlines()[-1]
@@ -247,7 +251,7 @@ def _backup_incremental():
     os.system('mysql %s -u%s --password=%s -e "flush logs;"' %
         (config.get('Backup', 'database'),config.get('Backup', 'username'),config.get('Backup', 'password')))
 
-    os.system('rm bin_log_info')
+    os.system('rm -rf bin_log_info')
     file('bin_log_info', 'w').write('before:%s' % (last_line))
 
     # change directories
@@ -280,7 +284,6 @@ def _backup_incremental():
 
     os.system('rm -rf %s' % (ignore_file))
 
-    #print ignore_logs
     for i in range(int(log_tracker['first']), int(log_tracker['last']) + 1):
         log_file = '%s.%06d' % (config.get('Backup', 'bin_log_name'), i)
         test_file = '%s%s' % (config.get('Backup', 'bin_log_path'), log_file)
@@ -295,10 +298,14 @@ def _backup_incremental():
     logAndPrint('Converting binary logs to SQL...', 'info')
     for i in range(int(log_tracker['first']), int(log_tracker['last']) + 1):
         bam_a_list.append('%s.%06d' % (config.get('Backup', 'bin_log_name'), i))
-    convert_these = ' '.join(bam_a_list)
     file_name = '%sinc_%s' % (file_prefix, dateandtime)
-    convert_to_sql = 'mysqlbinlog %s > %s.sql' % (convert_these, file_name)
+    convert_to_sql = 'mysqlbinlog %s > %s.sql' % \
+            (' '.join(bam_a_list), file_name)
     os.system(convert_to_sql)
+
+    logAndPrint('Removing converted bin logs', 'info')
+    for log in bam_a_list:
+        os.system('rm -rf %s' % (log))
 
     logAndPrint('Converted successfully!', 'info')
 
@@ -307,11 +314,12 @@ def _backup_incremental():
         logAndPrint('Encryption enabled...', 'info')
         logAndPrint('Encrypting and compressing backup...', 'info')
 
-        encryption_command = 'gpg -r %s --output %s.gpg --encrypt %s.sql' % (config.get('Encryption', 'key_name'), file_name, file_name)
+        encryption_command = 'gpg --always-trust -r %s --output %s.gpg --encrypt %s.sql' % \
+                (config.get('Encryption', 'key_name'), file_name, file_name)
         logAndPrint('running: %s' % encryption_command, 'info')
         os.system(encryption_command)
         logAndPrint('removing unencrypted sql file...(%s.sql)' % (file_name), 'info')
-        os.system('rm %s.sql' % file_name)
+        os.system('rm -rf %s.sql' % file_name)
     else:
         # start compressing...
         logAndPrint('Compressing incremental backup...', 'info')
@@ -430,7 +438,7 @@ def restore():
 
     os.system(start_flush)
 
-    ls_command = "ls -l %s |grep %s.0 | awk '{print $8}' > ignore_bin_log" % \
+    ls_command = "ls -l --time-style=long-iso %s |grep %s.0 | awk '{print $8}' > ignore_bin_log" % \
         (config.get('Backup', 'bin_log_path'),
         config.get('Backup', 'bin_log_name'))
     os.system(ls_command)
@@ -455,7 +463,7 @@ def restore():
 
     os.system(restore_command)
 
-    ls_command = "ls -l %s |grep %s.0 | awk '{print $8}' > ignore_bin_log" % \
+    ls_command = "ls -l --time-style=long-iso %s |grep %s.0 | awk '{print $8}' > ignore_bin_log" % \
         (config.get('Backup', 'bin_log_path'),
         config.get('Backup', 'bin_log_name'))
     os.system(ls_command)
@@ -537,7 +545,7 @@ def fetch():
     full_file = '%sfull_%s_*' % (config.get('Backup', 'file_prefix'), _date)
     inc_file = '%sinc_%s_*' % (config.get('Backup', 'file_prefix'), _date)
 
-    full_list_command = 'ssh %s "ls -l %s | grep %s | awk \'{print $8}\'"' % \
+    full_list_command = 'ssh %s "ls -l --time-style=long-iso %s | grep %s | awk \'{print $8}\'"' % \
             (config.get('Fetch', 'connection_string'),
              config.get('Fetch', 'remote_full_path'),
              full_file)
@@ -556,7 +564,7 @@ def fetch():
  
     full_backup = full_backup[0]
 
-    inc_list_command = 'ssh %s "ls -l %s | grep %s | awk \'{print $8}\'"' % \
+    inc_list_command = 'ssh %s "ls -l --time-style=long-iso %s | grep %s | awk \'{print $8}\'"' % \
             (config.get('Fetch', 'connection_string'),
              config.get('Fetch', 'remote_inc_path'),
              inc_file)
@@ -597,7 +605,7 @@ def fetch():
                  tmp + inc)
             os.system(inc_decrypt_command)
 
-        cat_command = 'cat %s%s %s > %s%somg_backup.sql' % \
+        cat_command = 'cat %s%s %s > %s%s_backup.sql' % \
             (config.get('Main', 'tmp'),
              full_backup.split('.')[0] + '.sql',
              [tmp + inc.split('.')[0] + '.sql' for inc in inc_backups],
@@ -609,8 +617,20 @@ def fetch():
         tmp = config.get('Main', 'tmp')
         full_decompress = 'gzip -d %s%s' % (tmp, full_backup)
         os.system(full_decompress)
+        incs = []
+        for inc in later_backups:
+            inc_decompress = 'gzip -d %s%s' & (tmp, inc)
+            incs = '%s%s' % (tmp, inc)
+            os.system(inc_decompress)
 
-    print cat_command
+        cat_command = 'cat %s%s %s > %s%s_backup.sql' % \
+                (tmp,
+                 full_backup.split('.'),
+                 ' '.join([inc.strip('.gz') for inc in incs]),
+                 config.get('Fetch', 'local_save_path'),
+                 config.get('Backup', 'file_prefix'))
+
+        os.system(cat_command)
 
 def logAndPrint(message, type='info', print_message=True, exit=False):
     if type == 'info':
