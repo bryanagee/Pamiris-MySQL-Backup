@@ -8,7 +8,9 @@ import getopt, ConfigParser
 import logging
 import logging.config
 import glob
-from subprocess import call
+import subprocess
+import shlex
+
 from datetime import datetime
 
 def main():
@@ -158,24 +160,67 @@ def _backup_full():
     message = 'Running mysqldump and creating File: %s' % (file_name)
     logAndPrint(message, 'info')
 
-    backup_command = 'mysqldump %s --flush-logs -u%s --password=%s > %s.sql' % \
+    try:
+        if config.get('Backup', 'db_host') is not None:
+            db_host = '-h %s' % config.get('Backup', 'db_host')
+    except:
+        db_host = '-h localhost'
+
+    backup_command = 'mysqldump %s --flush-logs -u%s %s --password=%s --result-file=%s.sql' % \
         (config.get('Backup', 'database'),
         config.get('Backup', 'username'),
+        db_host,
         config.get('Backup', 'password'),
         file_name)
-    os.system(backup_command)
+    #os.system(backup_command)
+    backup_command = shlex.split(backup_command)
+    process = subprocess.Popen(backup_command, stderr=subprocess.PIPE)
+    
+    # Set the stderr (if any) in p_out
+    p_out = process.communicate()
+
+    # Check for erorrs in the output. Error will not be None and 
+    # will be longer than ''
+    # 
+    # we completely ignore stdout since it's being piped into
+    # a file using the mysqldump --result-file flag.
+    for v in p_out:
+        if v is not None and v != '':
+            os.system('rm -f %s.sql' % (file_name))
+            message = 'Backup encountered a fatal error from MySQL. Exiting...'
+            logAndPrint(message, 'error')
+            logAndPrint(v, 'error', exit=True)
 
     message = 'Full backup created successfully!'
     logAndPrint(message, 'info')
 
-    if config.get('Encryption', 'enabled') == 'true':
+    if config.get('Encryption', 'enabled')is not None and \
+    config.get('Encryption', 'enabled') == 'true':
+
         logAndPrint('Encryption enabled...', 'info')
         logAndPrint('Encrypting and compressing backup...', 'info')
 
         encryption_command = 'gpg --always-trust -r %s --output %s.gpg --encrypt %s.sql' \
                 % (config.get('Encryption', 'key_name'), file_name, file_name)
         logAndPrint('running: %s' % encryption_command, 'info')
-        os.system(encryption_command)
+
+        encryption_command = shlex.split(encryption_command)
+        process = subprocess.Popen(encryption_command, stderr=subprocess.PIPE)
+        p_out = process.communicate()
+
+        # Check for erorrs in the output. Error will not be None and 
+        # will be longer than ''
+        # 
+        # we completely ignore stdout since it's being piped into
+        # a file using the mysqldump --result-file flag.
+        for v in p_out:
+            if v is not None and v != '':
+                os.system('rm -f %s.sql' % (file_name))
+                message = 'Backup encountered a fatal error when encrypting with GPG. Exiting...'
+                logAndPrint(message, 'error')
+                logAndPrint(v, 'error', exit=True)
+
+        #os.system(encryption_command)
         logAndPrint('removing unencrypted sql file...(%s.sql)' \
                 % (file_name), 'info')
         os.system('rm -rf %s.sql' % file_name)
@@ -317,7 +362,17 @@ def _backup_incremental():
         encryption_command = 'gpg --always-trust -r %s --output %s.gpg --encrypt %s.sql' % \
                 (config.get('Encryption', 'key_name'), file_name, file_name)
         logAndPrint('running: %s' % encryption_command, 'info')
-        os.system(encryption_command)
+        encryption_command = shlex.split(encryption_command)
+        process = subprocess.Popen(encryption_command, stderr=subprocess.PIPE)
+        p_out = process.communicate()
+        #os.system(encryption_command)
+        for v in p_out:
+            if v is not None and v != '':
+                os.system('rm -f %s.sql' % (file_name))
+                message = 'Backup encountered a fatal error when encrypting with GPG. Exiting...'
+                logAndPrint(message, 'error')
+                logAndPrint(v, 'error', exit=True)
+
         logAndPrint('removing unencrypted sql file...(%s.sql)' % (file_name), 'info')
         os.system('rm -rf %s.sql' % file_name)
     else:
@@ -389,9 +444,18 @@ def restore():
          config.get('Main', 'tmp'),
          full_output,
          full_backup[0])
+
+    decrypt = shlex.split(decrypt)
     
     logAndPrint('Decrypting full and incremental backup files...','info')
-    os.system(decrypt)
+    #os.system(decrypt)
+    process = subprocess.Popen(decrypt, stderr=subprocess.PIPE)
+    p_out = process.communicate()
+
+    for v in p_out:
+        if v is not None and v != '':
+            logAndPrint('Backup encountered a fatal error when dencrypting with GPG. Exiting...', 'error')
+            logAndPrint(v, 'error', exit=True)
 
     if config.get('Backup', 'inc_path'):
         try:
@@ -433,8 +497,19 @@ def restore():
             config.get('Main', 'tmp'))
     os.system(build_me)
 
+
     start_flush = 'mysql --password=%s -e "FLUSH LOGS;"' % \
             (config.get('Backup', 'password'))
+    start_flush = shlex.split(start_flush)
+
+    process = subprocess.Popen(start_flush, stdout=subprocess.PIPE)
+    p_out = process.communicate()
+
+    for v in p_out:
+        if v is not None and v !='':
+            message = 'Backup encountered an error when accessing MySQL. Backup Exiting...'
+            logAndPrint(message, 'error')
+            logAndPrint(v, 'error', exit=True)
 
     os.system(start_flush)
 
@@ -448,18 +523,54 @@ def restore():
     drop_db_command = 'mysql --password=%s -e "drop database %s"' % \
             (config.get('Backup', 'password'),
              config.get('Backup', 'database'))
-    os.system(drop_db_command)
+    drop_db_command = shlex.split(drop_db_command)
+    
+    process = subprocess.Popen(drop_db_command, stderr=subprocess.PIPE)
+    p_out = process.communicate()
+    
+    for v in p_out:
+        if v is not None and v != '':
+            message = 'Backup encountered an error when accessing MySQL. Backup Exiting...'
+            logAndPrint(message, 'error')
+            logAndPrint(v, 'error', exit=True)
+    #os.system(drop_db_command)
 
     logAndPrint('Restoring database from backup...', 'info')
     create_db_command = 'mysql --password=%s -e "create database %s"' % \
             (config.get('Backup', 'password'),
              config.get('Backup', 'database'))
-    os.system(create_db_command)
+    create_db_command = shlex.split(create_db_command)
 
-    restore_command = 'mysql %s --password=%s < %stemp_restore.sql' % \
+    process = subprocess.Popen(create_db_command, stderr=subprocess.PIPE)
+    p_out = process.communicate()
+
+    for v in p_out:
+        message = 'Backup encountered an error when accessing MySQL. Backup Exiting...'
+        logAndPrint(message, 'error')
+        logAndPrint(v, 'error', exit=True)
+    #os.system(create_db_command)
+
+    cat_full_command = 'cat %stmp_restore.sql' % (config.get('Main', 'tmp'))
+    cat_full_command = shlex.split(cat_full_command)
+    
+    # The output of this process will be piped into the restore process below.
+    # This is done because subprocess separates the processes and how
+    # piping actually works.
+    cat_process = subprocess.Popen(cat_full_command, stdout=subprocess.PIPE)
+
+    restore_command = 'mysql %s --password=%s' % \
             (config.get('Backup', 'database'),
-             config.get('Backup', 'password'),
-             config.get('Main', 'tmp'))
+             config.get('Backup', 'password'))
+    restore_command = shlex.split(restore_command)
+
+    process = subprocess.Popen(restore_command, stdin=cat_process.stdout, stderr=subprocess.PIPE)
+    p_out = process.communicate()
+
+    for v in p_out:
+        if v is not None and v != '':
+            message = 'Backup encountered an error when accessing MySQL. Backup Exiting...'
+            logAndPrint(message, 'error')
+            logAndPrint(v, 'error', exit=True)
 
     os.system(restore_command)
 
@@ -471,6 +582,16 @@ def restore():
 
     end_flush = 'mysql --password=%s -e "FLUSH LOGS;"' % \
             (config.get('Backup', 'password'))
+    end_flush = shlex.split(end_flush)
+
+    process = subprocess.Popen(end_flush, stderr=subprocess.PIPE)
+    p_out = process.communicate()
+
+    for v in p_out:
+        if v is not None and v != '':
+            message = 'Backup encountered an error when accessing MySQL. Backup Exiting...'
+            logAndPrint(message, 'error')
+            logAndPrint(v, 'error', exit=True)
 
     os.system(end_flush)
 
