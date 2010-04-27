@@ -1,20 +1,34 @@
 [Main]
+# trailing / is required on all paths
+tmp = /tmp/
 
 [Backup]
-# trailing / is required
+# trailing / is required on all paths
 full_path = /path/to/full/backups/
 # if inc_path is not set the application will use the full path by default
-inc_path = /path/to/incremental/backups/
+inc_path = /path/to/inc/backups/
 bin_log_path = /var/log/mysql/
 bin_log_name = mysql-bin
-file_prefix = dbname_
+file_prefix = db_name_
 username = user
-password = t3ster
-database = dbname
+password = p4ssw0rd!
+database = Datebase
+db_host = localhost
 
 [Encryption]
 # uncomment the line below to enable backup encryption
 enabled = true
+key_name = public_key@email.com
+passphrase_file = /path/to/passphrase
 
 [Logging]
-log_path = /path/to/log/file.log
+log_path = ./pmb.log
+
+[Fetch]
+# when fetching a backup, you need to have an SSH public key on the server
+# as well as a keyring installed for no-passphrase access
+connection_string = me@server.com
+port = 22
+remote_full_path = /path/to/full/backups/
+remote_inc_path = /path/to/inc/backups/
+local_save_path = /path/on/my/machine/
