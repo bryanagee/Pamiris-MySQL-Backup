@@ -33,8 +33,30 @@ then a `local_save_path`. This will scp backups files over from the remote machi
 and create a single .sql file that can be used to restore your database. The file
 will be stored in your `local_save_path` directory.
 
+Turning on Binary Logging
+-------------------------
+
+In order for this application to work you need to turn on bin logging.
+
+    sudo vi /etc/mysql/my.cnf
+
+inside `my.cnf` you will see...
+
+    # log_bin = /var/log/mysql/mysql-bin.log
+
+Uncommenting that line will enable loggin for you. You then need to restart your
+MySQL server...
+
+    # on Debian/Ubuntu...
+    sudo /etc/init.d/mysql restart
+
 Useage
 ======
+
+WARNING: DO NOT run multiple instances of this application against the same database server!
+Binary logs are made by tracking everything MySQL does. Running more than one instance of this
+application will cause confusion in bin-log sequences and leave you with corrupt database
+backups.
 
 Full backup
 -----------
@@ -44,6 +66,11 @@ command. This is required for incremental backups to run.
 
     $ pmb.py backup --full
     $ pmb.py backup -f
+
+You can also specify a database to back up using --database= or --all-databases
+
+    $ pmb.py backup --full --all-databases
+    $ pmb.py backup --full --database=my_database
 
 Incremental backup
 ------------------
@@ -55,10 +82,20 @@ and exception and exit with a fatal error.
     $ pmb.py backup --incremental
     $ pmb.py backup -i
 
+As with a full backup, you can specify the database you would like
+to backup using --database= or --all-databases
+
+    $ pmb.py backup --incremental --all-databases
+    $ pmb.py backup --incremental --database=my_database
+
 Restore database from backup set
 --------------------------------
 
     $ pmb.py restore --date=YYYYMMDD --time=HHMM
+
+You can restore a specific database by using --database=.
+
+    $ pmb.py restore --database=my_database --date=YYYYMMDD --time=HHMM
 
 Fetching a backup from a remote server
 --------------------------------------
