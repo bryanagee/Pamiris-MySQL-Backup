@@ -42,7 +42,17 @@ def main():
     # attemped to parse the command line arguments. getopt will detect and throw an exception if an argument
     # exists that wasn't meant to be there.
     try:
-        options, args = getopt.gnu_getopt(sys.argv[1:], 'fi', ['full', 'incremental', 'time=', 'date=', 'quiet'])
+        options, args = getopt.gnu_getopt(\
+                sys.argv[1:], 
+                'fi', 
+                ['full',
+                 'incremental',
+                 'all-databases',
+                 'database=',
+                 'time=',
+                 'date=',
+                 'quiet']
+        )
     except getopt.GetoptError, err:
         logAndPrint(err, 'error', True, True)
 
@@ -166,8 +176,17 @@ def _backup_full():
     except:
         db_host = '-h localhost'
 
-    backup_command = 'mysqldump %s --flush-logs -u%s %s --password=%s --result-file=%s.sql' % \
-        (config.get('Backup', 'database'),
+    database = config.get('Backup', 'database')
+    for o,a in options:
+        if '--all-databases' == o:
+            database = o
+            break
+        elif '--database' == o:
+            database = a
+            break
+
+    backup_command = 'mysqldump %s --add-drop-database --flush-logs -u%s %s --password=%s --result-file=%s.sql' % \
+        (database, #config.get('Backup', 'database'),
         config.get('Backup', 'username'),
         db_host,
         config.get('Backup', 'password'),
@@ -338,14 +357,28 @@ def _backup_incremental():
             (config.get('Backup', 'bin_log_path'), log_file))
         logAndPrint(log_file, 'info')
 
+    # check for the existence of --database or --all-databases options
+    # and parse which database will be pulled out of the bin log
+    database = '--database=%s' % (config.get('Backup', 'database'))
+    for o,a in options:
+        if '--all-databases' == o:
+            database = ''
+            break
+        elif '--database' == o:
+            database = '--database=%s' % (a)
+            break
+
     # convert to sql and compress
     bam_a_list = []
     logAndPrint('Converting binary logs to SQL...', 'info')
     for i in range(int(log_tracker['first']), int(log_tracker['last']) + 1):
         bam_a_list.append('%s.%06d' % (config.get('Backup', 'bin_log_name'), i))
     file_name = '%sinc_%s' % (file_prefix, dateandtime)
-    convert_to_sql = 'mysqlbinlog %s > %s.sql' % \
-            (' '.join(bam_a_list), file_name)
+
+    convert_to_sql = 'mysqlbinlog %s %s > %s.sql' % \
+            (database, 
+             ' '.join(bam_a_list),
+             file_name)
     os.system(convert_to_sql)
 
     logAndPrint('Removing converted bin logs', 'info')
@@ -497,6 +530,14 @@ def restore():
             config.get('Main', 'tmp'))
     os.system(build_me)
 
+    database = config.get('Backup', 'database')
+    for o,a in options:
+        if '--all-databases' == o:
+            database = ''
+            break
+        elif '--database' == o:
+            database = '--database=%s' % (a)
+            break
 
     start_flush = 'mysql --password=%s -e "FLUSH LOGS;"' % \
             (config.get('Backup', 'password'))
@@ -511,14 +552,15 @@ def restore():
             logAndPrint(message, 'error')
             logAndPrint(v, 'error', exit=True)
 
-    os.system(start_flush)
+    #os.system(start_flush)
 
     ls_command = "ls -l --time-style=long-iso %s |grep %s.0 | awk '{print $8}' > ignore_bin_log" % \
         (config.get('Backup', 'bin_log_path'),
         config.get('Backup', 'bin_log_name'))
     os.system(ls_command)
     first_log = file('ignore_bin_log', "r").readlines()[-1]
-
+    
+    """
     logAndPrint('Dropping database...', 'info')
     drop_db_command = 'mysql --password=%s -e "drop database %s"' % \
             (config.get('Backup', 'password'),
@@ -534,7 +576,9 @@ def restore():
             logAndPrint(message, 'error')
             logAndPrint(v, 'error', exit=True)
     #os.system(drop_db_command)
+    """
 
+    """
     logAndPrint('Restoring database from backup...', 'info')
     create_db_command = 'mysql --password=%s -e "create database %s"' % \
             (config.get('Backup', 'password'),
@@ -549,8 +593,11 @@ def restore():
         logAndPrint(message, 'error')
         logAndPrint(v, 'error', exit=True)
     #os.system(create_db_command)
+    """
 
-    cat_full_command = 'cat %stmp_restore.sql' % (config.get('Main', 'tmp'))
+    logAndPrint('Restoring database from backup...', 'info')
+
+    cat_full_command = 'cat %stemp_restore.sql' % (config.get('Main', 'tmp'))
     cat_full_command = shlex.split(cat_full_command)
     
     # The output of this process will be piped into the restore process below.
@@ -559,7 +606,7 @@ def restore():
     cat_process = subprocess.Popen(cat_full_command, stdout=subprocess.PIPE)
 
     restore_command = 'mysql %s --password=%s' % \
-            (config.get('Backup', 'database'),
+            (database, #config.get('Backup', 'database'),
              config.get('Backup', 'password'))
     restore_command = shlex.split(restore_command)
 
@@ -572,7 +619,7 @@ def restore():
             logAndPrint(message, 'error')
             logAndPrint(v, 'error', exit=True)
 
-    os.system(restore_command)
+    #os.system(restore_command)
 
     ls_command = "ls -l --time-style=long-iso %s |grep %s.0 | awk '{print $8}' > ignore_bin_log" % \
         (config.get('Backup', 'bin_log_path'),
@@ -593,7 +640,7 @@ def restore():
             logAndPrint(message, 'error')
             logAndPrint(v, 'error', exit=True)
 
-    os.system(end_flush)
+    #os.system(end_flush)
 
     first_log = first_log.split('.')[1]
     last_log = last_log.split('.')[1]
@@ -604,8 +651,6 @@ def restore():
                 (config.get('Backup', 'bin_log_path'),
                 config.get('Backup', 'bin_log_name'),
                 i))
-
-    print logs
 
     try:
         os.chdir(config.get('Backup', 'full_path'))
